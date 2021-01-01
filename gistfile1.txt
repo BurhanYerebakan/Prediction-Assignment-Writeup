@@ -1,0 +1,147 @@
+downloadcsv <- function(url, nastrings) {
+  temp <- tempfile()
+  download.file(url, temp, method = "curl")
+  data <- read.csv(temp, na.strings = nastrings)
+  unlink(temp)
+  return(data)
+}
+
+trainurl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+train <- downloadcsv(trainurl, c("", "NA", "#DIV/0!"))
+
+testurl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+test <- downloadcsv(testurl, c("", "NA", "#DIV/0!"))
+
+dim(train)
+
+## [1] 19622   160
+
+table(train$classe)
+
+## 
+##    A    B    C    D    E 
+## 5580 3797 3422 3216 3607
+
+library(caret)
+
+## Loading required package: lattice
+## Loading required package: ggplot2
+
+
+set.seed(123456)
+trainset <- createDataPartition(train$classe, p = 0.8, list = FALSE)
+Training <- train[trainset, ]
+Validation <- train[-trainset, ]
+
+# exclude near zero variance features
+nzvcol <- nearZeroVar(Training)
+Training <- Training[, -nzvcol]
+
+# exclude columns with m40% ore more missing values exclude descriptive
+# columns like name etc
+cntlength <- sapply(Training, function(x) {
+  sum(!(is.na(x) | x == ""))
+})
+nullcol <- names(cntlength[cntlength < 0.6 * length(Training$classe)])
+descriptcol <- c("X", "user_name", "raw_timestamp_part_1", "raw_timestamp_part_2", 
+                 "cvtd_timestamp", "new_window", "num_window")
+excludecols <- c(descriptcol, nullcol)
+Training <- Training[, !names(Training) %in% excludecols]
+
+library(randomForest)
+
+## randomForest 4.6-7
+## Type rfNews() to see new features/changes/bug fixes.
+
+rfModel <- randomForest(classe ~ ., data = Training, importance = TRUE, ntrees = 10)
+
+ptraining <- predict(rfModel, Training)
+print(confusionMatrix(ptraining, Training$classe))
+
+## Confusion Matrix and Statistics
+## 
+##           Reference
+## Prediction    A    B    C    D    E
+##          A 4464    0    0    0    0
+##          B    0 3038    0    0    0
+##          C    0    0 2738    0    0
+##          D    0    0    0 2573    0
+##          E    0    0    0    0 2886
+## 
+## Overall Statistics
+##                                 
+##                Accuracy : 1     
+##                  95% CI : (1, 1)
+##     No Information Rate : 0.284 
+##     P-Value [Acc > NIR] : <2e-16
+##                                 
+##                   Kappa : 1     
+##  Mcnemar's Test P-Value : NA    
+## 
+## Statistics by Class:
+## 
+##                      Class: A Class: B Class: C Class: D Class: E
+## Sensitivity             1.000    1.000    1.000    1.000    1.000
+## Specificity             1.000    1.000    1.000    1.000    1.000
+## Pos Pred Value          1.000    1.000    1.000    1.000    1.000
+## Neg Pred Value          1.000    1.000    1.000    1.000    1.000
+## Prevalence              0.284    0.194    0.174    0.164    0.184
+## Detection Rate          0.284    0.194    0.174    0.164    0.184
+## Detection Prevalence    0.284    0.194    0.174    0.164    0.184
+## Balanced Accuracy       1.000    1.000    1.000    1.000    1.000
+
+
+pvalidation <- predict(rfModel, Validation)
+print(confusionMatrix(pvalidation, Validation$classe))
+
+## Confusion Matrix and Statistics
+## 
+##           Reference
+## Prediction    A    B    C    D    E
+##          A 1116    7    0    0    0
+##          B    0  751    4    0    0
+##          C    0    1  680    4    0
+##          D    0    0    0  639    4
+##          E    0    0    0    0  717
+## 
+## Overall Statistics
+##                                         
+##                Accuracy : 0.995         
+##                  95% CI : (0.992, 0.997)
+##     No Information Rate : 0.284         
+##     P-Value [Acc > NIR] : <2e-16        
+##                                         
+##                   Kappa : 0.994         
+##  Mcnemar's Test P-Value : NA            
+## 
+## Statistics by Class:
+## 
+##                      Class: A Class: B Class: C Class: D Class: E
+## Sensitivity             1.000    0.989    0.994    0.994    0.994
+## Specificity             0.998    0.999    0.998    0.999    1.000
+## Pos Pred Value          0.994    0.995    0.993    0.994    1.000
+## Neg Pred Value          1.000    0.997    0.999    0.999    0.999
+## Prevalence              0.284    0.193    0.174    0.164    0.184
+## Detection Rate          0.284    0.191    0.173    0.163    0.183
+## Detection Prevalence    0.286    0.192    0.175    0.164    0.183
+## Balanced Accuracy       0.999    0.994    0.996    0.996    0.997
+
+ptest <- predict(rfModel, test)
+ptest
+
+##  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 
+##  B  A  B  A  A  E  D  B  A  A  B  C  B  A  E  E  A  B  B  B 
+## Levels: A B C D E
+
+answers <- as.vector(ptest)
+
+pml_write_files = function(x) {
+  n = length(x)
+  for (i in 1:n) {
+    filename = paste0("problem_id_", i, ".txt")
+    write.table(x[i], file = filename, quote = FALSE, row.names = FALSE, 
+                col.names = FALSE)
+  }
+}
+
+pml_write_files(answers)
